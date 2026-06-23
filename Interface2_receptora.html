@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interface 2 - Receptora Morse</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --text-color: #f8fafc;
+            --primary: #10b981;
+            --primary-hover: #059669;
+            --accent: #3b82f6;
+            --danger: #ef4444;
+            --border: #334155;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .container {
+            width: 100%;
+            max-width: 650px;
+            background-color: var(--card-bg);
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border);
+        }
+        h1 {
+            font-size: 22px;
+            margin-top: 0;
+            text-align: center;
+            color: var(--primary);
+        }
+        .status-panel {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: #111827;
+            padding: 12px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border: 1px solid var(--border);
+        }
+        .status-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            background-color: var(--danger);
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-dot.connected {
+            background-color: var(--primary);
+            box-shadow: 0 0 8px var(--primary);
+        }
+        button {
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background-color: var(--primary-hover);
+        }
+        .display-panel {
+            background-color: #0f172a;
+            border: 2px dashed var(--accent);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 25px;
+            text-align: center;
+            min-height: 80px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        .display-title {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #64748b;
+            margin-bottom: 8px;
+        }
+        .display-content {
+            font-size: 32px;
+            font-weight: bold;
+            color: #3b82f6;
+            word-break: break-all;
+            letter-spacing: 1px;
+        }
+        .log-panel {
+            margin-top: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #94a3b8;
+        }
+        .log-area {
+            background-color: #000;
+            font-family: 'Courier New', Courier, monospace;
+            padding: 15px;
+            border-radius: 6px;
+            height: 200px;
+            overflow-y: auto;
+            border: 1px solid var(--border);
+            font-size: 14px;
+            color: #a7f3d0;
+            white-space: pre-wrap;
+        }
+        .clear-btn {
+            background-color: #475569;
+            padding: 6px 12px;
+            font-size: 12px;
+            margin-top: 10px;
+            float: right;
+        }
+        .clear-btn:hover {
+            background-color: #334155;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>MÁQUINA 2 - Interface Receptora</h1>
+        
+        <div class="status-panel">
+            <div>
+                <span id="status-dot" class="status-dot"></span>
+                <span id="status-text">Desconectado</span>
+            </div>
+            <button id="btn-connect">Conectar Arduino</button>
+        </div>
+
+        <div class="display-panel">
+            <div class="display-title">Mensagem Decodificada Final</div>
+            <div id="display-content" class="display-content">---</div>
+        </div>
+
+        <div class="log-panel">
+            <label>Console de Recepção (Live Logs):</label>
+            <div id="log-area" class="log-area">Aguardando conexão para escutar dados infravermelhos...</div>
+            <button id="btn-clear" class="clear-btn">Limpar Tudo</button>
+        </div>
+    </div>
+
+    <script>
+        let port;
+        let reader;
+        let keepReading = true;
+        let currentLine = "";
+
+        const btnConnect = document.getElementById('btn-connect');
+        const btnClear = document.getElementById('btn-clear');
+        const statusDot = document.getElementById('status-dot');
+        const statusText = document.getElementById('status-text');
+        const logArea = document.getElementById('log-area');
+        const displayContent = document.getElementById('display-content');
+
+        function appendToConsole(text) {
+            if (logArea.innerHTML.includes("Aguardando conexão")) {
+                logArea.innerHTML = "";
+            }
+            logArea.innerHTML += text;
+            logArea.scrollTop = logArea.scrollHeight;
+        }
+
+        btnClear.addEventListener('click', () => {
+            logArea.innerHTML = "";
+            displayContent.textContent = "---";
+            currentLine = "";
+        });
+
+        btnConnect.addEventListener('click', async () => {
+            if (port) {
+                keepReading = false;
+                try {
+                    if (reader) {
+                        await reader.cancel();
+                    }
+                    btnConnect.textContent = 'Conectar Arduino';
+                    statusDot.classList.remove('connected');
+                    statusText.textContent = 'Desconectado';
+                    appendToConsole('\n[Conexão encerrada pelo usuário]\n');
+                } catch (err) {
+                    console.error(err);
+                }
+                return;
+            }
+
+            try {
+                if (!('serial' in navigator)) {
+                    alert('A Web Serial API não é suportada neste navegador. Use o Google Chrome, Edge ou Opera.');
+                    return;
+                }
+
+                port = await navigator.serial.requestPort();
+                await port.open({ baudRate: 9600 });
+
+                statusDot.classList.add('connected');
+                statusText.textContent = 'Conectado (9600 baud)';
+                btnConnect.textContent = 'Desconectar';
+                logArea.innerHTML = "[Conectado com sucesso ao Arduino Receptor! Aguardando pulsos IR...]\n\n";
+                
+                keepReading = true;
+                readSerialData();
+
+            } catch (err) {
+                alert('Erro ao abrir porta serial: ' + err.message);
+                port = null;
+            }
+        });
+
+        async function readSerialData() {
+            while (port && port.readable && keepReading) {
+                try {
+                    const textDecoder = new TextDecoderStream();
+                    const readableStreamClosed = port.readable.pipeTo(textDecoder.writable);
+                    reader = textDecoder.readable.getReader();
+
+                    while (keepReading) {
+                        const { value, done } = await reader.read();
+                        if (done) {
+                            break;
+                        }
+                        if (value) {
+                            appendToConsole(value);
+                            
+                            // Processa a string linha por linha para capturar o resultado final decodificado
+                            currentLine += value;
+                            if (currentLine.includes('\n')) {
+                                const lines = currentLine.split('\n');
+                                currentLine = lines.pop(); // Guarda pedaço incompleto se houver
+                                
+                                for (let line of lines) {
+                                    if (line.trim().startsWith("Palavra:")) {
+                                        const extractedWord = line.replace("Palavra:", "").trim();
+                                        if (extractedWord && extractedWord !== "?") {
+                                            displayContent.textContent = extractedWord;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (err) {
+                    console.error("Erro na leitura de dados:", err);
+                    break;
+                } finally {
+                    if (reader) {
+                        reader.releaseLock();
+                    }
+                }
+            }
+            
+            if (port) {
+                await port.close();
+                port = null;
+            }
+        }
+    </script>
+</body>
+</html>
